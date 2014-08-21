@@ -106,18 +106,40 @@ public class OAuth2CodeGrant: OAuth2 {
 			else if nil != response && nil != data {
 				if let http = response as? NSHTTPURLResponse {
 					if 200 == http.statusCode {
-						if let json = NSJSONSerialization.JSONObjectWithData(data, options: nil, error: &finalError) as? NSDictionary {
-							if let access = json["access_token"] as? String {
-								self.accessToken = access
-							}
-							if let refresh = json["refresh_token"] as? String {
-								self.refreshToken = refresh
-							}
-							
-							self.logIfVerbose("Did receive access token: \(self.accessToken), refresh token: \(self.refreshToken)")
-							self.didAuthorize(json)
-							return
-						}
+                        let mime : AnyObject? = http.allHeaderFields["Content-Type"]
+                        let smime = mime as String
+                        var params : NSDictionary?
+                        if smime == "application/x-www-form-urlencoded; charset=utf-8" {
+                            let formData = NSString(data: data, encoding: NSUTF8StringEncoding)
+                            let pairs = split(String(formData)) { $0 == "&" }
+                            let dict = NSMutableDictionary()
+                            for (_, pair) in enumerate(pairs) {
+                                let i = split(pair) { $0 == "=" }
+                                if i.count > 1 {
+                                    dict[i[0]] = i[1]
+                                }
+                            }
+                            params = dict
+                        } else if smime == "application/json; charset=utf-8" {
+                            if let json = NSJSONSerialization.JSONObjectWithData(data, options: nil, error: &finalError) as? NSDictionary {
+                                params = json
+                            }
+                        } else {
+                            finalError = genOAuth2Error("Unknown mime type " + smime, .Generic)
+                        }
+                        
+                        if let params = params {
+                            if let access = params["access_token"] as? String {
+                                self.accessToken = access
+                            }
+                            if let refresh = params["refresh_token"] as? String {
+                                self.refreshToken = refresh
+                            }
+                            self.logIfVerbose("Did receive access token: \(self.accessToken), refresh token: \(self.refreshToken)")
+                            self.didAuthorize(params)
+                            return
+                        }
+                        
 					}
 				}
 			}
